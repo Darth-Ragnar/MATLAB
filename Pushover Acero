@@ -1,0 +1,702 @@
+clear;
+clc;
+format short
+
+
+%--------------------------------------------------------------------------
+
+% 1) Datos
+
+E = 20389019;       % Modulo de elasticidad (t/m^2)
+rho = 7.85/9.81;
+gdlm = [1 2 3 4 5 6];                                            %GDL maestros
+gdlc = [73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90];  %GDL conocidos (restricciones)
+
+% Definir las alturas correspondientes a cada nivel, incluyendo el nivel 0
+alturas = [0, 5, 10, 13, 16, 19, 22];  % Alturas en metros, con nivel 0 incluido
+
+% Leer los datos de los nodos del archivo Excel
+dataNodos = readtable('datos.xlsx', 'Sheet', 'nodos');
+% Guardar las columnas "nodo", "gdl 1", "gdl 2", "gdl 3" en variables
+nodo = dataNodos.nodo;
+gdl1 = dataNodos.gdl1;
+gdl2 = dataNodos.gdl2;
+gdl3 = dataNodos.gdl3;
+
+% Leer los datos de los elementos del archivo Excel
+dataElementos = readtable('datos.xlsx', 'Sheet', 'elementos');   
+% Guardar las columnas de los elementos en variables
+elemento = dataElementos.elemento;
+tipo = dataElementos.tipo;
+nombre = dataElementos.nombre;
+L = dataElementos.L;
+A = dataElementos.A;
+I = dataElementos.I;
+NI = dataElementos.NI;
+NF = dataElementos.NF;
+
+% Datos necesarios
+
+nde = elemento(end);
+
+% Crear una celda para almacenar los vectores de control de cada elemento
+VC = cell(nde, 1);  % Inicializar una celda con tamaño igual al número de elementos (nde)
+
+% Recorrer cada elemento para generar los vectores de control
+for i = 1:nde
+    % Nodo inicial y final del elemento
+    nodo_inicial = NI(i);
+    nodo_final = NF(i);
+    
+    % Obtener los grados de libertad (gdl1, gdl2, gdl3) para el nodo inicial
+    gdl_inicial_1 = gdl1(nodo_inicial == nodo);  % gdl1 del nodo inicial
+    gdl_inicial_2 = gdl2(nodo_inicial == nodo);  % gdl2 del nodo inicial
+    gdl_inicial_3 = gdl3(nodo_inicial == nodo);  % gdl3 del nodo inicial
+    
+    % Obtener los grados de libertad (gdl1, gdl2, gdl3) para el nodo final
+    gdl_final_1 = gdl1(nodo_final == nodo);  % gdl1 del nodo final
+    gdl_final_2 = gdl2(nodo_final == nodo);  % gdl2 del nodo final
+    gdl_final_3 = gdl3(nodo_final == nodo);  % gdl3 del nodo final
+    
+    % Crear el vector de control para el elemento i
+    VC{i} = [gdl_inicial_1, gdl_inicial_2, gdl_inicial_3, ...
+             gdl_final_1, gdl_final_2, gdl_final_3];
+end
+
+% Mostrar los vectores de control generados
+for i = 1:nde
+    disp(['VC' num2str(i) ' = [' num2str(VC{i}) ']']);
+end
+
+%--------------------------------------------------------------------------
+
+% 2) Calculo 
+
+%--------------------------------------------------------------------------
+
+% Matrices de masa locales 
+
+% Inicializar una celda para almacenar las matrices de cada elemento
+ML = cell(nde, 1);  % Donde nde es el número de elementos
+
+% Loop para crear matrices de cada elemento
+for i = 1:nde
+    % Extraer el vector de control, la longitud y el área del elemento i
+    VCi = VC{i};
+    Li = L(i);
+    Ai = A(i);
+    
+    % Inicializar la matriz ML1 para el elemento i
+    ML{i} = [0, VCi; VCi', zeros(length(VCi), length(VCi))];
+    
+    % Rellenar la matriz con valores específicos
+    ML{i}(2, 2) = 140;
+    ML{i}(2, 5) = 70;
+    ML{i}(5, 2) = ML{i}(2, 5);
+    ML{i}(3, 3) = 156;
+    ML{i}(3, 4) = 22 * Li; 
+    ML{i}(4, 3) = ML{i}(3, 4);
+    ML{i}(6, 3) = 54;
+    ML{i}(3, 6) = ML{i}(6, 3);
+    ML{i}(7, 3) = -13 * Li;
+    ML{i}(3, 7) = ML{i}(7, 3);
+    ML{i}(4, 4) = 4 * (Li^2);
+    ML{i}(6, 4) = 13 * Li;
+    ML{i}(4, 6) = ML{i}(6, 4);
+    ML{i}(7, 4) = -3 * (Li^2);
+    ML{i}(4, 7) = ML{i}(7, 4);
+    ML{i}(5, 5) = ML{i}(2, 2);
+    ML{i}(6, 6) = ML{i}(3, 3); 
+    ML{i}(6, 7) = -22 * Li;
+    ML{i}(7, 6) = ML{i}(6, 7);
+    ML{i}(7, 7) = ML{i}(4, 4);
+    
+    % Multiplicar el bloque interno por rho * Ai * Li / 420, sin tocar la primera fila y columna
+    ML{i}(2:end, 2:end) = ML{i}(2:end, 2:end) * (rho * Ai * Li / 420);
+    %ML{i}(2:end, 2:end) = ML{i}(2:end, 2:end);
+    
+    % Mostrar la matriz generada para cada elemento
+    disp(['Matriz ML para el Elemento ', num2str(i)]);
+    disp(ML{i});
+end
+
+%--------------------------------------------------------------------------
+
+% Matrices de rigidez locales
+
+% Inicializar una celda para almacenar las matrices de cada elemento
+KL = cell(nde, 1);  % Donde nde es el número de elementos
+
+% Loop para crear matrices de cada elemento
+for i = 1:nde
+    % Extraer el vector de control, area y la longitud del elemento i
+    VCi = VC{i};
+    Li = L(i);
+    Ai = A(i);
+    Ii = I(i);
+
+    % Inicializar la matriz KL1 para el elemento i
+    KL{i} = [0, VCi; VCi', zeros(length(VCi), length(VCi))];
+
+    % Rellenar la matriz con valores específicos
+    KL{i}(2, 2) = Ai*E/Li;
+    KL{i}(2, 5) = -Ai*E/Li;
+    KL{i}(5, 2) = -Ai*E/Li;
+    KL{i}(3, 3) = 12*E*Ii/(Li^3);
+    KL{i}(3, 4) = 6*E*Ii/(Li^2); 
+    KL{i}(4, 3) = KL{i}(3, 4);
+    KL{i}(6, 3) = -12*E*Ii/(Li^3);
+    KL{i}(3, 6) = KL{i}(6, 3);
+    KL{i}(7, 3) = 6*E*Ii/(Li^2);
+    KL{i}(3, 7) = KL{i}(7, 3);
+    KL{i}(4, 4) = 4*E*Ii/Li;
+    KL{i}(6, 4) = -6*E*Ii/(Li^2);
+    KL{i}(4, 6) = KL{i}(6, 4);
+    KL{i}(7, 4) = 2*E*Ii/(Li);
+    KL{i}(4, 7) = KL{i}(7, 4);
+    KL{i}(5, 5) = Ai*E/Li;
+    KL{i}(6, 6) = 12*E*Ii/(Li^3); 
+    KL{i}(6, 7) = -6*E*Ii/(Li^2);
+    KL{i}(7, 6) = KL{i}(6, 7);
+    KL{i}(7, 7) = 4*E*Ii/Li;
+
+     % Mostrar la matriz generada para cada elemento
+    disp(['Matriz Kl para el Elemento ', num2str(i)]);
+    disp(KL{i});
+end
+
+%--------------------------------------------------------------------------
+
+% Definir la matriz RT para columnas
+RT_columna = [ 0  1  0  0  0  0;
+              -1  0  0  0  0  0;
+               0  0  1  0  0  0;
+               0  0  0  0  1  0;
+               0  0  0 -1  0  0;
+               0  0  0  0  0  1];
+
+% Definir la matriz RT para vigas
+RT_viga = [ 1  0  0  0  0  0;
+            0  1  0  0  0  0;
+            0  0  1  0  0  0;
+            0  0  0  1  0  0;
+            0  0  0  0  1  0;
+            0  0  0  0  0  1];
+
+%--------------------------------------------------------------------------
+
+% Estructura para almacenar las matrices de masa y rigidez transformadas
+MS = struct();
+KS = struct();
+
+for i = 1:nde
+    % Verificar el tipo de elemento para seleccionar la RT adecuada
+    if tipo(i) == 1  % Columna
+        RT = RT_columna;
+        tipo_str = 'C';  % Para la nomenclatura de columna
+    else  % Viga
+        RT = RT_viga;
+        tipo_str = 'V';  % Para la nomenclatura de viga
+    end
+    
+    % Transformación de la matriz de masa ML (sin afectar la primera fila/columna)
+    ML_trans = ML{i};  % Copiamos la matriz original
+    ML_trans(2:end, 2:end) = RT' * ML{i}(2:end, 2:end) * RT;  % Transformación
+    
+    % Guardar la matriz de masa en la estructura MS
+    MS.(['MS_' tipo_str num2str(i)]) = ML_trans;
+    
+    % Mostrar la matriz transformada de masa
+    disp(['Matriz MS-' tipo_str num2str(i)]);
+    disp(ML_trans);
+
+    % Transformación de la matriz de rigidez KL (sin afectar la primera fila/columna)
+    KL_trans = KL{i};  % Copiamos la matriz original
+    KL_trans(2:end, 2:end) = RT' * KL{i}(2:end, 2:end) * RT;  % Transformación
+    
+    % Guardar la matriz de rigidez en la estructura KS
+    KS.(['KS_' tipo_str num2str(i)]) = KL_trans;
+    
+    % Mostrar la matriz transformada de rigidez
+    disp(['Matriz KS-' tipo_str num2str(i)]);
+    disp(KL_trans);
+end
+
+%--------------------------------------------------------------------------
+
+% Inicializar la matriz global de masa
+
+% Concatenar los grados de libertad en un solo vector
+todos_gdl = [gdl1; gdl2; gdl3];  % Concatenar todos los GDL en un solo vector
+
+% Encontrar el valor máximo
+max_dof = max(todos_gdl);  % Encontrar el máximo DOF usado
+
+% Mostrar el máximo DOF
+disp(['Máximo DOF: ', num2str(max_dof)]);
+MS_global = zeros(max_dof, max_dof);  % Crear una matriz global de tamaño adecuado
+
+% Hasta aquí va bien
+
+% Consolidar las matrices de masa en MS_global
+for i = 1:nde
+    % Verificar el tipo de elemento para seleccionar la nomenclatura adecuada
+    if tipo(i) == 1  % Columna
+        tipo_str = 'C';  % Para la nomenclatura de columna
+    else  % Viga
+        tipo_str = 'V';  % Para la nomenclatura de viga
+    end
+    
+    % Extraer los grados de libertad (primera fila/columna de la matriz)
+    dof_local = MS.(['MS_' tipo_str num2str(i)])(1, 2:end);  % DOF en la primera fila
+    
+    % Bucle para consolidar la matriz MS en MS_global
+    for r = 2:length(dof_local)+1  % Saltamos la primera fila
+        for c = 2:length(dof_local)+1  % Saltamos la primera columna
+            row_global = dof_local(r-1);  % Grado de libertad global en la fila
+            col_global = dof_local(c-1);  % Grado de libertad global en la columna
+            
+            % Sumar la contribución de la matriz local a la matriz global
+            MS_global(row_global, col_global) = MS_global(row_global, col_global) + MS.(['MS_' tipo_str num2str(i)])(r, c);
+        end
+    end
+end
+
+% Mostrar la matriz global de masa
+disp('Matriz global de masa MS_global:');
+disp(MS_global);
+
+%--------------------------------------------------------------------------
+
+% Inicializar la matriz global de rigidez
+
+KS_global = zeros(max_dof, max_dof);  % Crear una matriz global de tamaño adecuado
+
+% Consolidar las matrices de rigidez en KS_global
+for i = 1:nde
+    % Verificar el tipo de elemento para seleccionar la nomenclatura adecuada
+    if tipo(i) == 1  % Columna
+        tipo_str = 'C';  % Para la nomenclatura de columna
+    else  % Viga
+        tipo_str = 'V';  % Para la nomenclatura de viga
+    end
+    
+    % Extraer los grados de libertad (primera fila/columna de la matriz)
+    dof_local = KS.(['KS_' tipo_str num2str(i)])(1, 2:end);  % DOF en la primera fila
+    
+    % Bucle para consolidar la matriz KS en KS_global
+    for r = 2:length(dof_local)+1  % Saltamos la primera fila
+        for c = 2:length(dof_local)+1  % Saltamos la primera columna
+            row_global = dof_local(r-1);  % Grado de libertad global en la fila
+            col_global = dof_local(c-1);  % Grado de libertad global en la columna
+            
+            % Sumar la contribución de la matriz local a la matriz global
+            KS_global(row_global, col_global) = KS_global(row_global, col_global) + KS.(['KS_' tipo_str num2str(i)])(r, c);
+        end
+    end
+end
+
+% Mostrar la matriz global de rigidez
+disp('Matriz global de rigidez KS_global:');
+disp(KS_global);
+
+%--------------------------------------------------------------------------
+
+% Crear gdld (todos los GDL menos los GDL conocidos)
+gdld = setdiff(todos_gdl, gdlc);
+
+% Extraer la submatriz de masa correspondiente a los grados de libertad desconocidos
+MD = MS_global(gdld, gdld);
+
+% Extraer la submatriz de rigidez correspondiente a los grados de libertad desconocidos
+KD = KS_global(gdld, gdld);
+
+% Mostrar la matriz reducida
+disp('Matriz de masa reducida MD (MS_reducida):');
+disp(MD);
+
+disp('Matriz de rigidez reducida KD (KS_reducida):');
+disp(KD);
+
+% Extraer la submatriz de masa correspondiente a los grados de libertad maestros
+MS_gdlm = MS_global(gdlm, gdlm);
+
+% Extraer la submatriz de rigidez correspondiente a los grados de libertad desconocidos
+KS_gdlm = KS_global(gdlm, gdlm);
+
+% Mostrar la matriz maestra
+disp('Matriz de masa maestra MS_gdlm:');
+disp(MS_gdlm);
+
+disp('Matriz de rigidez maestra KS_gdlm:');
+disp(KS_gdlm);
+
+% Crear gdl_Krr (todos los GDL menos los GDL conocidos y los maestros)
+gdl_Krr = setdiff(todos_gdl, [gdlc, gdlm]);
+
+% Extraer la submatriz Krr 
+Krr = KS_global(gdl_Krr, gdl_Krr);
+
+% Mostrar la matriz Krr
+disp('Matriz Krr:');
+disp(Krr);
+
+% Extraer la submatriz Krm 
+Krm = KS_global(gdl_Krr, gdlm);
+
+% Mostrar la matriz Krm
+disp('Matriz Krm:');
+disp(Krm);
+
+% Hasta aqui esta bien
+
+% Calcular la parte inferior de la matriz T: -Krr^-1 * Krm
+parte_inferior = -inv(Krr) * Krm;
+
+% Crear la matriz identidad para los GDL maestros
+parte_superior = eye(length(gdlm));  % Matriz identidad de tamaño de los GDL maestros
+
+% Combinar la parte superior e inferior
+T = [parte_superior; parte_inferior];
+
+% Mostrar la matriz de transición T
+disp('Matriz de transición T:');
+disp(T);
+
+%--------------------------------------------------------------------------
+
+% Matrices reducidas Mr y Kr
+
+% Calcular la matriz reducida de masa Mr
+Mr = T' * MD * T;
+
+% Calcular la matriz reducida de rigidez Kr
+Kr = T' * KD * T;
+
+% Mostrar las matrices reducidas
+disp('Matriz de masa reducida Mr:');
+disp(Mr);
+
+disp('Matriz de rigidez reducida Kr:');
+disp(Kr);
+
+%--------------------------------------------------------------------------
+
+% Calculo Pushover tradicional %
+
+%--------------------------------------------------------------------------
+
+% Creacion del vector de cargas
+
+% Leer los datos de los nodos del archivo Excel (incluyendo posiciones x e y)
+dataNodos = readtable('datos.xlsx', 'Sheet', 'nodos');
+
+% Extraer las columnas de interés: nodo, x y y
+nodo = dataNodos.nodo;
+x = dataNodos.x;
+y = dataNodos.y;
+
+% Encontrar los nodos que están en la posición más a la izquierda (mínimo x)
+x_min = min(x);  % Encontrar el valor mínimo de la coordenada x
+nodos_izquierda = nodo(x == x_min);  % Seleccionar los nodos con la coordenada x mínima
+gdl1_izquierda = gdl1(x == x_min);  % Seleccionar el gdl1 correspondiente a estos nodos
+
+% Extraer las coordenadas y de estos nodos
+y_izquierda = y(x == x_min);
+
+% Ordenar los nodos de izquierda según la coordenada y (de arriba hacia abajo, mayor a menor)
+[~, orden] = sort(y_izquierda, 'descend');
+nodos_izquierda_ordenados = nodos_izquierda(orden);  % Nodos ordenados
+gdl1_ordenado = gdl1_izquierda(orden);  % gdl1 correspondiente en el mismo orden
+
+% Mostrar los nodos ordenados y sus gdl1
+disp('Nodos más a la izquierda (de arriba hacia abajo):');
+disp(nodos_izquierda_ordenados);
+
+disp('gdl1 de los nodos más a la izquierda (en el mismo orden):');
+disp(gdl1_ordenado);
+
+% Solicitar la carga máxima al usuario
+carga_max = input('Introduce la carga máxima en el nodo más alto: ');
+
+% Número de nodos a la izquierda (número de grados de libertad correspondientes)
+num_nodos = length(gdl1_ordenado);
+
+% Crear el vector de cargas P0, decreciendo linealmente desde carga_max hasta 0
+P0 = linspace(carga_max, 0, num_nodos)';  % Vector de cargas
+
+% Mostrar el vector de cargas P0
+disp('Vector de cargas P0 (de arriba hacia abajo):');
+disp(P0);
+
+%--------------------------------------------------------------------------
+
+% Calcular los valores propios (lambda) del problema generalizado
+[Phi, Lambda] = eig(Kr, Mr);  % Phi son los vectores propios, Lambda son los valores propios
+
+% Extraer los valores propios (lambda)
+lambda = diag(Lambda);  % Los valores propios se encuentran en la diagonal de Lambda
+
+% Mostrar los valores de lambda
+disp('Valores de lambda:');
+disp(lambda);
+
+%--------------------------------------------------------------------------
+
+% Calcular las frecuencias naturales (omega, rad/seg)
+omega = sqrt(lambda);
+
+% Calcular la frecuencia en Hz (f)
+f = omega / (2 * pi);
+
+% Calcular el periodo (T)
+T = 1 ./ f;
+
+% Reorganizar los resultados de menor a mayor en función de lambda
+[lambda_sorted, sort_idx] = sort(lambda);  % Ordenar lambdas de menor a mayor
+
+% Reorganizar omega, f, y T en función de la nueva ordenación
+omega_sorted = omega(sort_idx);
+f_sorted = f(sort_idx);
+T_sorted = T(sort_idx);
+
+% Crear una tabla con los resultados ordenados
+tabla = table(lambda_sorted, omega_sorted, f_sorted, T_sorted, ...
+    'VariableNames', {'Lambda', 'ω (rad)', 'f (Hz)', 'T (seg)'});
+
+% Mostrar la tabla generada
+disp(tabla);
+
+%--------------------------------------------------------------------------
+
+% Definir el número de lambdas
+% Definir el número de lambdas
+num_lambdas = length(lambda_sorted);  % Número de lambdas ordenadas
+
+% Crear las matrices de Modo Normalizado con Lambda correspondientes
+Mat_modo_normalizado_lambda = cell(num_lambdas, 1);  % Celda para almacenar las matrices
+
+% Recorrer las lambdas de menor a mayor, usando los índices ordenados
+for i = 1:num_lambdas
+    % Calcular la matriz Kr - lambda_sorted_i * Mr (usando lambda ordenada)
+    Mat_modo_normalizado_lambda{i} = Kr - lambda_sorted(i) * Mr;
+    
+    % Mostrar la matriz correspondiente con la nueva descripción
+    disp(['Matriz de Modo Normalizado con Lambda_' num2str(i) ' (correspondiente a lambda ' num2str(i) '):']);
+    disp(Mat_modo_normalizado_lambda{i});
+end
+
+%--------------------------------------------------------------------------
+
+% Definir el número de lambdas (ya ordenados)
+num_lambdas = length(lambda_sorted);  % Número de lambdas ordenadas
+
+% Celda para almacenar los resultados de los U para cada matriz lambda
+resultados_U = cell(num_lambdas, 1);
+
+% Recorrer las matrices y resolver los sistemas de ecuaciones
+for i = 1:num_lambdas
+    % Extraer la matriz del modo normalizado con lambda
+    A = Mat_modo_normalizado_lambda{i};
+    
+    % Resolver el sistema A * U = 0, donde U = [U1, U2, U3, U4, U5, U6]
+    % Usamos null(A) para encontrar la base del espacio nulo (solución no trivial)
+    U = null(A);
+    
+    % Asegurarnos de tener una única solución y normalizar
+    if ~isempty(U)
+        U = U ./ U(end);  % Normalizar para que U6 sea 1
+    end
+    
+    % Almacenar los resultados
+    resultados_U{i} = U;
+    
+    % Mostrar los valores de U correspondientes a cada lambda
+    disp(['Valores de U para el Modo con Lambda_' num2str(i) ' (correspondiente a lambda ' num2str(i) '):']);
+    disp(U);
+end
+%--------------------------------------------------------------------------
+% Recordar que hasta este punto nada esta normalizado pero me da hueva
+% reescribir todo, por el momento no hay tiempo
+%--------------------------------------------------------------------------
+
+% Inicializar un vector para almacenar los valores de t
+t_values = zeros(num_lambdas, 1);
+
+% Recorrer los valores de U para cada lambda
+for i = 1:num_lambdas
+    % Extraer el vector de modo correspondiente a la lambda i (phi_i)
+    phi_i = resultados_U{i};
+    
+    % Calcular phi_i^T * Mr * phi_i
+    phi_M_phi = phi_i' * Mr * phi_i;
+    
+    % Calcular t usando la fórmula t = 1 / sqrt(phi_i^T * Mr * phi_i)
+    t_values(i) = 1 / sqrt(phi_M_phi);
+    
+    % Mostrar el valor de t correspondiente a cada lambda
+    disp(['Valor de t para lambda_' num2str(i) ':']);
+    disp(t_values(i));
+end
+
+%--------------------------------------------------------------------------
+
+% Inicializar una celda para almacenar los modos normalizados
+modos_normalizados = cell(num_lambdas, 1);
+
+% Inicializar la matriz para almacenar los modos normalizados
+matriz_modos_normalizados = zeros(length(resultados_U{1}), num_lambdas);  % Tamaño adecuado
+
+% Recorrer los modos de cada lambda
+for i = 1:num_lambdas
+    % Extraer el vector de modo U para lambda_i
+    phi_i = resultados_U{i};
+    
+    % Multiplicar cada valor de U por el correspondiente t_i
+    phi_normalizado = t_values(i) * phi_i;
+    
+    % Almacenar el modo normalizado en la celda
+    modos_normalizados{i} = phi_normalizado;
+    
+    % Rellenar la columna correspondiente en la matriz de modos normalizados
+    matriz_modos_normalizados(:, i) = phi_normalizado;
+    
+    % Mostrar los valores de los modos normalizados para cada nodo (gdl)
+    disp(['Modo Normalizado para lambda_' num2str(i) ' (correspondiente a lambda ' num2str(lambda_sorted(i)) '):']);
+    disp(phi_normalizado);
+end
+
+% Mostrar la matriz de modos normalizados global
+disp('Matriz de Modos Normalizados Global:');
+disp(matriz_modos_normalizados);
+
+
+%--------------------------------------------------------------------------
+
+% Definir el número de lambdas (ya ordenados)
+num_lambdas = length(resultados_U);  % Número de lambdas
+
+% Inicializar la matriz global de modos 
+matriz_modos = zeros(length(resultados_U{1}), num_lambdas);  % Tamaño adecuado
+
+% Rellenar cada columna de la matriz con el valor de phi correspondiente a cada lambda
+for i = 1:num_lambdas
+    phi_no_normalizado_i = resultados_U{i};  % Extraer el phi correspondiente a cada lambda
+    matriz_modos(:, i) = phi_no_normalizado_i;  % Asignar cada phi como una columna
+end
+
+% Mostrar la matriz de modos global
+disp('Matriz de Modos:');
+disp(matriz_modos);
+
+%--------------------------------------------------------------------------
+
+% Definir los puntos interpolados para suavizar las curvas (más puntos)
+alturas_suavizadas = linspace(min(alturas), max(alturas), 100);  % 100 puntos suavizados
+
+% Crear una ventana de gráficos con múltiples subplots (una para cada modo)
+figure;
+num_filas = 3;  % Número de filas de subplots
+num_columnas = 2;  % Número de columnas de subplots
+set(gcf, 'Position', [100, 100, 900, 1200]);  % Ajustar el tamaño de la ventana gráfica
+
+% Recorrer los modos normalizados para graficar cada uno
+for i = 1:num_lambdas
+    % Extraer el modo normalizado correspondiente y agregar el desplazamiento 0 para el nivel 0
+    modo_normalizado_i = [0; flipud(matriz_modos_normalizados(:, i))];  % Invertir los desplazamientos
+    
+    % Interpolar los desplazamientos utilizando spline
+    desplazamientos_suavizados = spline(alturas, modo_normalizado_i, alturas_suavizadas);
+    
+    % Crear un subplot para cada modo
+    subplot(num_filas, num_columnas, i);
+    plot(desplazamientos_suavizados, alturas_suavizadas, '-o');  % Gráfica con puntos suavizados
+    title(['Modo Normalizado ', num2str(i)]);
+    xlabel('Desplazamiento Normalizado');
+    ylabel('Altura del Nivel (m)');
+    axis([min(desplazamientos_suavizados), max(desplazamientos_suavizados), 0, 25]);  % Ajustar límites de ejes
+    grid on;
+end
+
+% Ajustar el espacio entre subplots para que se vean mejor
+subplot_tight = @(m,n,p) subtightplot (m, n, p, [0.08, 0.06], [0.08, 0.06], [0.06, 0.04]);
+
+%--------------------------------------------------------------------------
+%lo que sigue se puede borrar
+%ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+
+%--------------------------------------------------------------------------
+% Análisis Pushover
+%--------------------------------------------------------------------------
+disp('Iniciando el análisis pushover...');
+
+% Inicializar variables del análisis
+carga_inicial = P0;  % Vector de cargas iniciales
+delta_carga = 0.001 * max(P0);  % Incremento pequeño de carga aplicado en cada paso
+tolerancia = 1e-5;  % Criterio de convergencia
+iter_max = 20;  % Número máximo de iteraciones por paso
+desplazamiento_control_max = 0.1;  % Límite de desplazamiento del nodo de control
+desplazamiento_control = 0;  % Desplazamiento inicial del nodo de control
+
+% Nodo de control (generalmente el nodo más alto en la dirección deseada)
+nodo_control = nodos_izquierda_ordenados(1);  % Nodo más alto a la izquierda
+gdl_control = gdl1_ordenado(1);  % Grado de libertad en la dirección deseada
+
+% Normalizar las matrices globales
+KS_global = KS_global / max(max(abs(KS_global)));
+MS_global = MS_global / max(max(abs(MS_global)));
+
+% Vector de desplazamientos inicial
+U = zeros(size(KS_global, 1), 1);
+curva_capacidad = [];  % Inicializar la curva de capacidad
+
+% Bucle de pasos incrementales
+while desplazamiento_control < desplazamiento_control_max
+    % Incrementar el vector de cargas
+    P_aplicada = carga_inicial + delta_carga;
+
+    % Iterar para resolver el sistema no lineal
+    for iter = 1:iter_max
+        % Calcular las fuerzas internas
+        P_interna = KS_global * U;
+
+        % Calcular el desequilibrio
+        desequilibrio = P_aplicada - P_interna;
+
+        % Verificar convergencia
+        if norm(desequilibrio) < tolerancia
+            break;
+        end
+
+        % Calcular el incremento de desplazamiento
+        delta_U = KS_global \ desequilibrio;  % Resolver el sistema lineal
+        U = U + delta_U;  % Actualizar el vector de desplazamientos
+    end
+
+    % Actualizar el desplazamiento de control
+    desplazamiento_control = U(gdl_control);
+
+    % Registrar resultados para la curva de capacidad
+    fuerza_total = sum(P_aplicada);
+    curva_capacidad = [curva_capacidad; desplazamiento_control, fuerza_total];
+
+    % Mostrar el progreso
+    disp(['Desplazamiento de control: ', num2str(desplazamiento_control), ...
+          ', Fuerza total: ', num2str(fuerza_total)]);
+
+    % Incrementar las cargas para el siguiente paso
+    carga_inicial = P_aplicada;
+end
+
+%--------------------------------------------------------------------------
+% Graficar la curva de capacidad
+figure;
+plot(curva_capacidad(:,1), curva_capacidad(:,2), '-o');
+xlabel('Desplazamiento de Control (m)');
+ylabel('Fuerza Total Aplicada (kN)');
+title('Curva de Capacidad');
+grid on;
+
+%--------------------------------------------------------------------------
+
+
