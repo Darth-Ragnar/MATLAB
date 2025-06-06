@@ -1,0 +1,59 @@
+% Limpieza de variables y pantalla
+clear;
+clc;
+
+% Leer solo la segunda columna de desplazamientos desde el archivo DespTop.out
+fileID = fopen('DespTop.out', 'r');
+
+% Verificar si el archivo se abre correctamente
+if fileID == -1
+    error('No se pudo abrir el archivo DespTop.out');
+end
+
+% Leer los datos del archivo y extraer la segunda columna
+data = textscan(fileID, '%*f %f', 'Delimiter', ' ', 'MultipleDelimsAsOne', true);
+desplazamientos = data{1};
+
+% Cerrar el archivo
+fclose(fileID);
+
+% Inicializar la lista para almacenar fuerzas base totales
+fuerza_base = [];
+
+% Leer datos de reacciones desde el archivo ReaccionBase.out
+fileID = fopen('ReaccionBase.out', 'r');
+
+% Verificar si el archivo se abre correctamente
+if fileID == -1
+    error('No se pudo abrir el archivo ReaccionBase.out');
+end
+
+% Leer cada línea del archivo y sumar las fuerzas de los nodos de apoyo
+while ~feof(fileID)
+    linea = fgetl(fileID);
+    if ischar(linea)
+        valores = str2num(linea);  %#ok<ST2NM> % Convertir línea en números
+        % Sumar las fuerzas verticales de los nodos 11, 12 y 13 para obtener la fuerza base total
+        fuerza_nodal_11 = valores(2); % Fuerza vertical nodo 11
+        fuerza_nodal_12 = valores(5); % Fuerza vertical nodo 12
+        fuerza_nodal_13 = valores(8); % Fuerza vertical nodo 13
+        fuerza_total = fuerza_nodal_11 + fuerza_nodal_12 + fuerza_nodal_13;
+        fuerza_base = [fuerza_base; abs(fuerza_total)]; % Usar valor absoluto
+    end
+end
+
+% Cerrar el archivo
+fclose(fileID);
+
+% Crear la gráfica pushover
+figure;
+hold on; % Asegurarse de que no se agreguen nuevas gráficas innecesarias
+plot(desplazamientos, fuerza_base, '-o', 'LineWidth', 1.5, 'MarkerSize', 6);
+xlabel('Desplazamiento del nodo de control (cm)');
+ylabel('Fuerza cortante en la base (ton)');
+title('Curva Pushover');
+grid on;
+hold off; % Finalizar la gráfica
+
+% Opcional: Guardar la gráfica como imagen
+saveas(gcf, 'CurvaPushover.png');
